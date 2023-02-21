@@ -1,0 +1,104 @@
+<?php
+/**
+ * Plugin Name: Contact Form 7 OpenAI Extension
+ * Plugin URI: https://example.com/
+ * Description: Extends the Contact Form 7 form submission with OpenAI API.
+ * Version: 1.0.0
+ * Author: John Doe
+ * Author URI: https://example.com/
+ */
+
+// Add a custom admin page to accept API key from OpenAI
+function cf7_openai_extension_add_options_page() {
+  add_options_page(
+    'Contact Form 7 OpenAI Extension',
+    'CF7 OpenAI Extension',
+    'manage_options',
+    'cf7-openai-extension',
+    'cf7_openai_extension_options_page'
+  );
+}
+add_action('admin_menu', 'cf7_openai_extension_add_options_page');
+
+function cf7_openai_extension_options_page() {
+  if (!current_user_can('manage_options')) {
+    wp_die(__('You do not have sufficient permissions to access this page.'));
+  }
+  ?>
+  <div class="wrap">
+    <h1>Contact Form 7 OpenAI Extension</h1>
+    <form method="post" action="options.php">
+      <?php
+        settings_fields('cf7_openai_extension_options');
+        do_settings_sections('cf7_openai_extension');
+        submit_button('Save API Key');
+      ?>
+    </form>
+  </div>
+  <?php
+}
+
+function cf7_openai_extension_settings_init() {
+  register_setting('cf7_openai_extension_options', 'cf7_openai_extension_api_key');
+  add_settings_section(
+    'cf7_openai_extension_api_key_section',
+    'OpenAI API Key',
+    'cf7_openai_extension_api_key_section_callback',
+    'cf7_openai_extension'
+  );
+  add_settings_field(
+    'cf7_openai_extension_api_key',
+    'API Key',
+    'cf7_openai_extension_api_key_callback',
+    'cf7_openai_extension',
+    'cf7_openai_extension_api_key_section'
+  );
+}
+
+function cf7_openai_extension_api_key_section_callback() {
+  echo '<p>Enter your OpenAI API key below:</p>';
+}
+
+function cf7_openai_extension_api_key_callback() {
+  $value = get_option('cf7_openai_extension_api_key');
+  echo '<input type="text" name="cf7_openai_extension_api_key" value="' . esc_attr($value) . '" />';
+}
+
+add_action('admin_init', 'cf7_openai_extension_settings_init');
+
+// Capture form submission, and get a custom response from OpenAI using the API key stored in the admin page
+function cf7_openai_extension_form_submitted($form) {
+  $submission = WPCF7_Submission::get_instance();
+  if (!$submission) {
+    return;
+  }
+  $data = $submission->get_posted_data();
+  $message = $data['your-message'];
+  $api_key = get_option('cf7_openai_extension_api_key');
+  $url = 'https://api.openai.com/v1/engines/davinci-codex/completions';
+  $headers = array(
+    'Content-Type: application/json',
+    'Authorization: Bearer ' . $api_key,
+  );
+  $body = array(
+    'prompt' => $message,
+    'max_tokens' => 5,
+    'n' => 1,
+    'stop' => '.',
+  );
+  $response = wp_remote_post($url, array(
+    'headers' => $headers,
+    'body' => json_encode($body),
+  ));
+  if (is_wp_error($response)) {
+  return;
+  }
+$response_body = wp_remote_retrieve_body($response);
+$response_data = json_decode($response_body);
+$completion = $response_data->choices[0]->text;
+
+// Display the OpenAI API response as a form success response
+$message .= "\n\n" . $completion;
+$form->set_response_text($message);
+}
+add_action('wpcf7_mail_sent', 'cf7_openai_extension_form_submitted');
